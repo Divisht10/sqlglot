@@ -231,7 +231,16 @@ class Stuff(Expression, Func):
 
 class Substring(Expression, Func):
     _sql_names = ["SUBSTRING", "SUBSTR"]
-    arg_types = {"this": True, "start": False, "length": False, "zero_start": False}
+    # zero_start: a start of 0 is treated as 1 (e.g. Spark, Snowflake)
+    # clamp_start: positions before the start of the string still count towards the length,
+    # so a start <= 0 only shortens the result (e.g. Postgres)
+    arg_types = {
+        "this": True,
+        "start": False,
+        "length": False,
+        "zero_start": False,
+        "clamp_start": False,
+    }
 
 
 class SubstringIndex(Expression, Func):

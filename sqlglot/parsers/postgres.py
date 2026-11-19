@@ -198,8 +198,14 @@ class PostgresParser(parser.Parser):
         TokenType.CURRENT_SCHEMA: exp.CurrentSchema,
     }
 
+    def _parse_substring(self) -> exp.Substring:
+        result = super()._parse_substring()
+        result.set("clamp_start", True)
+        return result
+
     FUNCTION_PARSERS = {
         **parser.Parser.FUNCTION_PARSERS,
+        "SUBSTR": lambda self: self._parse_substring(),
         "DATE_PART": lambda self: self._parse_date_part(),
         "JSON_AGG": lambda self: self.expression(
             exp.JSONArrayAgg(this=self._parse_lambda(), order=self._parse_order())

@@ -1629,6 +1629,48 @@ FROM json_data, field_ids""",
             "SELECT * FROM schema_name.table_name AS st WHERE JSON_EXTRACT_PATH_TEXT(CAST((st.data) AS JSON), VARIADIC ARRAY[CAST('test' AS TEXT)]) = CAST('test' AS TEXT)",
         )
 
+    def test_substring_nonpositive_start(self):
+        # Postgres counts positions before the start of the string, so a start <= 0 only
+        # shortens the result, whereas DuckDB counts negative starts from the end of the string
+        self.validate_all(
+            "SELECT SUBSTRING('hello', -1, 3)",
+            write={
+                "postgres": "SELECT SUBSTRING('hello' FROM -1 FOR 3)",
+                "duckdb": "SELECT SUBSTRING('hello', 1, 1)",
+            },
+        )
+        self.validate_all(
+            "SELECT SUBSTRING('hello' FROM 0)",
+            write={
+                "postgres": "SELECT SUBSTRING('hello' FROM 0)",
+                "duckdb": "SELECT SUBSTRING('hello', 1)",
+            },
+        )
+        self.validate_all(
+            "SELECT SUBSTRING(s FROM i FOR n)",
+            write={
+                "postgres": "SELECT SUBSTRING(s FROM i FOR n)",
+                "duckdb": "SELECT SUBSTRING(s, CASE WHEN i < 1 THEN 1 ELSE i END, CASE WHEN (i + n - CASE WHEN i < 1 THEN 1 ELSE i END) < 0 THEN 0 ELSE i + n - CASE WHEN i < 1 THEN 1 ELSE i END END)",
+            },
+        )
+
+        self.validate_all(
+            "SELECT SUBSTRING(s, -1, n)",
+            write={
+                "duckdb": "SELECT SUBSTRING(s, 1, CASE WHEN (n - 2) < 0 THEN 0 ELSE n - 2 END)",
+            },
+        )
+
+        # Positive literal starts and the regex / SQL pattern forms are unchanged
+        self.validate_all(
+            "SELECT SUBSTRING('hello', 2, 3)",
+            write={"duckdb": "SELECT SUBSTRING('hello', 2, 3)"},
+        )
+        self.validate_all(
+            "SELECT SUBSTRING('Thomas' FROM '...$')",
+            write={"postgres": "SELECT SUBSTRING('Thomas' FROM '...$')"},
+        )
+
     def test_ddl(self):
         # Checks that user-defined types are parsed into DataType instead of Identifier
         self.parse_one("CREATE TABLE t (a udt)").this.expressions[0].args["kind"].assert_is(

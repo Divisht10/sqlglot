@@ -2885,6 +2885,45 @@ class DuckDBGenerator(generator.Generator):
 
             return self.func("SUBSTRING", expression.this, start, length)
 
+        start = expression.args.get("start")
+        if (
+            expression.args.get("clamp_start")
+            and start
+            and not start.is_string
+            and not (start.is_int and start.to_py() >= 1)
+        ):
+            # DuckDB counts a negative start from the end of the string, so clamp it to 1 and
+            # drop the positions before the start of the string from the length instead
+            one = exp.Literal.number(1)
+            length = expression.args.get("length")
+
+            if start.is_int:
+                # start <= 0: fold it into the length when possible
+                clamped: exp.Expr = one
+                if length and length.is_int:
+                    length = exp.Literal.number(max(start.to_py() + length.to_py() - 1, 0))
+                elif length:
+                    length = exp.Sub(
+                        this=length.copy(), expression=exp.Literal.number(1 - start.to_py())
+                    )
+                    length = exp.If(
+                        this=length < exp.Literal.number(0),
+                        true=exp.Literal.number(0),
+                        false=length.copy(),
+                    )
+            else:
+                # GREATEST would skip NULLs, so use conditionals to keep NULL starts / lengths NULL
+                clamped = exp.If(this=start.copy() < one, true=one, false=start.copy())
+                if length:
+                    remaining = exp.Sub(
+                        this=exp.Add(this=start.copy(), expression=length.copy()),
+                        expression=clamped.copy(),
+                    )
+                    zero = exp.Literal.number(0)
+                    length = exp.If(this=remaining < zero, true=zero, false=remaining.copy())
+
+            return self.func("SUBSTRING", expression.this, clamped, length)
+
         return self.function_fallback_sql(expression)
 
     def strtotime_sql(self, expression: exp.StrToTime) -> str:
